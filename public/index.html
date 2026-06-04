@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atasa SuperAdmin — Randevular</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(180deg, #fafbfd, #f0f4f8);
+    }
+    .tab-active {
+      background: #1B5FAE;
+      color: white;
+    }
+    .status-new { background: #fef3c7; color: #92400e; }
+    .status-contacted { background: #dbeafe; color: #1e40af; }
+    .status-scheduled { background: #e0e7ff; color: #3730a3; }
+    .status-completed { background: #d1fae5; color: #065f46; }
+    .status-cancelled { background: #fee2e2; color: #991b1b; }
+    .status-no_show { background: #f3f4f6; color: #4b5563; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <!-- ── LOGIN ── -->
+  <main id="loginScreen" class="min-h-screen flex items-center justify-center p-6">
+    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+      <div class="text-center mb-6">
+        <div class="text-5xl mb-2">🛡️</div>
+        <h1 class="text-2xl font-bold text-slate-900">Atasa SuperAdmin</h1>
+        <p class="text-sm text-slate-500 mt-1">Randevu yönetim paneli</p>
+      </div>
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">Email</label>
+          <input id="loginEmail" type="email" required placeholder="ornek@firma.com"
+            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1.5">Şifre</label>
+          <input id="loginPassword" type="password" required placeholder="••••••••"
+            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+        <button type="submit" id="loginBtn"
+          class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">Giriş Yap</button>
+        <div id="loginError" hidden class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 text-center"></div>
+      </form>
+    </div>
+  </main>
+
+  <!-- ── APP ── -->
+  <div id="appScreen" hidden>
+    <!-- Header -->
+    <header class="bg-white border-b shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🛡️</span>
+          <h1 class="text-lg font-bold text-slate-900">Atasa SuperAdmin</h1>
+        </div>
+        <div class="flex items-center gap-4">
+          <span id="userEmail" class="text-sm text-slate-600"></span>
+          <button id="logoutBtn" class="text-sm text-red-600 hover:text-red-700">Çıkış</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      <!-- Stats -->
+      <div id="statsRow" class="grid grid-cols-2 md:grid-cols-6 gap-3"></div>
+
+      <!-- Filters -->
+      <div class="bg-white rounded-xl border p-4 flex flex-wrap gap-2 items-center">
+        <div class="flex gap-2 flex-wrap" id="filterTabs"></div>
+        <div class="flex-1"></div>
+        <input id="searchInput" type="search" placeholder="🔍 Ad, email, telefon ara..."
+          class="px-4 py-2 border rounded-lg text-sm min-w-[260px]">
+        <button id="refreshBtn" class="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">↻ Yenile</button>
+      </div>
+
+      <!-- Table -->
+      <div class="bg-white rounded-xl border overflow-hidden">
+        <div id="loadingRow" class="p-8 text-center text-slate-500">Yükleniyor...</div>
+        <table id="apptTable" hidden class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-600 tracking-wider">
+            <tr>
+              <th class="text-left p-3">Tarih</th>
+              <th class="text-left p-3">Ad Soyad</th>
+              <th class="text-left p-3">İletişim</th>
+              <th class="text-left p-3">Konu</th>
+              <th class="text-left p-3">Randevu</th>
+              <th class="text-left p-3">Temsilci</th>
+              <th class="text-left p-3">Durum</th>
+              <th class="text-right p-3"></th>
+            </tr>
+          </thead>
+          <tbody id="apptTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <div id="emptyState" hidden class="p-12 text-center text-slate-400">
+          <div class="text-4xl mb-2">📭</div>
+          <p>Henüz randevu yok</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ── DETAIL MODAL ── -->
+  <div id="detailModal" hidden class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div class="p-4 border-b flex items-center justify-between">
+        <h2 class="font-bold text-lg" id="modalTitle">Randevu Detayı</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-xl">✕</button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1 space-y-4" id="modalBody"></div>
+      <div class="p-4 border-t flex justify-between items-center bg-slate-50">
+        <button id="deleteBtn" class="text-sm text-red-600 hover:text-red-700">🗑️ Sil</button>
+        <div class="flex gap-2">
+          <button onclick="closeModal()" class="px-4 py-2 text-sm bg-slate-200 rounded-lg">Kapat</button>
+          <button id="saveBtn" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Toast ── -->
+  <div id="toast" hidden class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-3 rounded-lg shadow-lg z-50"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+
+</html>
