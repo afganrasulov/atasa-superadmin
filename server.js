@@ -70,10 +70,14 @@ function summarizeForm(s) {
 
 async function sendNewFormEmail(s) {
   const apiKey = process.env.RESEND_API_KEY;
+  // Resend quota'yı korumak için: sadece Ömer Habib talepleri email gönderir.
+  // Diğer tüm formlar sadece panel'de görünür.
   const wantsOmer = /ömer|omer|habib/i.test(s.representative || '');
-  const to = wantsOmer
-    ? (process.env.OMER_NOTIFY_EMAIL || 'info@atasa.tr')
-    : (process.env.NOTIFY_EMAIL || 'afganrasulov@gmail.com');
+  if (!wantsOmer) {
+    console.log(`⏭️  Email skipped (no Ömer request): ${s.form_type} / ${s.first_name} ${s.last_name}`);
+    return;
+  }
+  const to = process.env.OMER_NOTIFY_EMAIL || 'info@atasa.tr';
   const from = process.env.RESEND_FROM_EMAIL || 'Atasa Superadmin <noreply@mail.atasaedu.com>';
   if (!apiKey) return;
 
@@ -114,7 +118,7 @@ async function sendNewFormEmail(s) {
       }),
     });
     if (!r.ok) console.error('Resend error:', r.status, await r.text());
-    else console.log(`📧 Email sent to ${to}: ${s.form_type} / ${full_name}${wantsOmer ? ' (Ömer Habib)' : ''}`);
+    else console.log(`📧 Email sent to ${to}: ${s.form_type} / ${full_name} (Ömer Habib)`);
   } catch (e) {
     console.error('Resend exception:', e.message);
   }
