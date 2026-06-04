@@ -70,7 +70,10 @@ function summarizeForm(s) {
 
 async function sendNewFormEmail(s) {
   const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.NOTIFY_EMAIL || 'afganrasulov@gmail.com';
+  const wantsOmer = /ömer|omer|habib/i.test(s.representative || '');
+  const to = wantsOmer
+    ? (process.env.OMER_NOTIFY_EMAIL || 'info@atasa.tr')
+    : (process.env.NOTIFY_EMAIL || 'afganrasulov@gmail.com');
   const from = process.env.RESEND_FROM_EMAIL || 'Atasa Superadmin <noreply@mail.atasaedu.com>';
   if (!apiKey) return;
 
@@ -111,7 +114,7 @@ async function sendNewFormEmail(s) {
       }),
     });
     if (!r.ok) console.error('Resend error:', r.status, await r.text());
-    else console.log(`📧 Email sent: ${s.form_type} / ${full_name}`);
+    else console.log(`📧 Email sent to ${to}: ${s.form_type} / ${full_name}${wantsOmer ? ' (Ömer Habib)' : ''}`);
   } catch (e) {
     console.error('Resend exception:', e.message);
   }
