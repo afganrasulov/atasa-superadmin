@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pg from 'pg';
-import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config();
@@ -13,11 +12,19 @@ const pool = new Pool({
   ssl: false,
 });
 
-const supabaseAuth = createClient(
-  process.env.GOTRUE_URL || 'https://auth.atasa.mobi',
-  process.env.GOTRUE_ANON_KEY || '',
-  { auth: { persistSession: false } },
-);
+const GOTRUE_URL = process.env.GOTRUE_URL || 'https://auth.atasa.mobi';
+const GOTRUE_ANON_KEY = process.env.GOTRUE_ANON_KEY || '';
+
+async function verifyGotrueToken(accessToken) {
+  const res = await fetch(`${GOTRUE_URL}/auth/v1/user`, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'apikey': GOTRUE_ANON_KEY,
+    },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,17 +39,17 @@ async function requireAuth(req, res, next) {
   const token = auth.replace(/^Bearer\s+/i, '');
   if (!token) return res.status(401).json({ error: 'no token' });
   try {
-    const { data, error } = await supabaseAuth.auth.getUser(token);
-    if (error || !data?.user) return res.status(401).json({ error: 'invalid token' });
+    const user = await verifyGotrueToken(token);
+    if (!user?.email) return res.status(401).json({ error: 'invalid token' });
 
     // allowed_users whitelist (same as blog-admin)
     const allowed = await pool.query(
       `SELECT name FROM atasa_mobi.allowed_users WHERE email=$1`,
-      [data.user.email.toLowerCase()],
+      [user.email.toLowerCase()],
     );
     if (allowed.rowCount === 0) return res.status(403).json({ error: 'not allowed' });
 
-    req.user = { id: data.user.id, email: data.user.email, name: allowed.rows[0].name };
+    req.user = { id: user.id, email: user.email, name: allowed.rows[0].name };
     next();
   } catch (e) {
     res.status(401).json({ error: 'auth error', detail: e.message });
