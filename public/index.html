@@ -74,12 +74,15 @@
       <div id="statsRow" class="grid grid-cols-2 md:grid-cols-6 gap-3"></div>
 
       <!-- Filters -->
-      <div class="bg-white rounded-xl border p-4 flex flex-wrap gap-2 items-center">
-        <div class="flex gap-2 flex-wrap" id="filterTabs"></div>
-        <div class="flex-1"></div>
-        <input id="searchInput" type="search" placeholder="🔍 Ad, email, telefon ara..."
-          class="px-4 py-2 border rounded-lg text-sm min-w-[260px]">
-        <button id="refreshBtn" class="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">↻ Yenile</button>
+      <div class="bg-white rounded-xl border p-4 space-y-3">
+        <div class="flex flex-wrap gap-2" id="typeTabs"></div>
+        <div class="flex flex-wrap gap-2 items-center">
+          <div class="flex gap-2 flex-wrap" id="statusTabs"></div>
+          <div class="flex-1"></div>
+          <input id="searchInput" type="search" placeholder="🔍 Ad, email, telefon, mesaj..."
+            class="px-4 py-2 border rounded-lg text-sm min-w-[280px]">
+          <button id="refreshBtn" class="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">↻ Yenile</button>
+        </div>
       </div>
 
       <!-- Table -->
@@ -89,11 +92,11 @@
           <thead class="bg-slate-50 text-xs uppercase text-slate-600 tracking-wider">
             <tr>
               <th class="text-left p-3">Tarih</th>
+              <th class="text-left p-3">Tip</th>
               <th class="text-left p-3">Ad Soyad</th>
               <th class="text-left p-3">İletişim</th>
-              <th class="text-left p-3">Konu</th>
+              <th class="text-left p-3">Özet</th>
               <th class="text-left p-3">Randevu</th>
-              <th class="text-left p-3">Temsilci</th>
               <th class="text-left p-3">Durum</th>
               <th class="text-right p-3"></th>
             </tr>

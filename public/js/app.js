@@ -1,4 +1,4 @@
-// Atasa SuperAdmin — frontend logic
+// Atasa SuperAdmin — frontend logic (form_submissions tek tablo)
 const SUPABASE_URL = 'https://auth.atasa.mobi';
 const SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6ImF0YXNhLXNlbGYtaG9zdGVkIiwiaWF0IjoxNzgwNTIyMjk0LCJleHAiOjIwOTU4ODIyOTR9.LsZTNpx-1xsvGRa3PxIISkc5w3KGNBdYWXDXjcDV0uI';
@@ -14,15 +14,25 @@ const STATUS_LABEL = {
   completed: '✅ Tamamlandı',
   cancelled: '❌ İptal',
   no_show: '🚫 Gelmedi',
+  spam: '🗑️ Spam',
 };
-const STATUS_ORDER = ['new', 'contacted', 'scheduled', 'completed', 'cancelled', 'no_show'];
+const STATUS_ORDER = ['new', 'contacted', 'scheduled', 'completed', 'cancelled', 'no_show', 'spam'];
+
+const TYPE_LABEL = {
+  appointment: '📅 Randevu',
+  contact: '✉️ İletişim',
+  whatsapp: '💬 WhatsApp',
+  other: '📄 Diğer',
+};
 
 let state = {
   user: null,
   token: null,
-  appointments: [],
+  forms: [],
   stats: {},
-  filter: 'all',
+  byType: {},
+  statusFilter: 'all',
+  typeFilter: 'all',
   search: '',
   editingId: null,
 };
@@ -34,7 +44,7 @@ async function init() {
     state.token = session.access_token;
     state.user = { email: session.user.email };
     showApp();
-    loadAppointments();
+    loadForms();
   } else {
     showLogin();
   }
@@ -61,7 +71,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   state.token = data.session.access_token;
   state.user = { email: data.user.email };
   showApp();
-  loadAppointments();
+  loadForms();
 });
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -105,7 +115,7 @@ async function api(path, opts = {}) {
 }
 
 // ─────────── List + stats ───────────
-async function loadAppointments() {
+async function loadForms() {
   const tableEl = document.getElementById('apptTable');
   const loadingEl = document.getElementById('loadingRow');
   const emptyEl = document.getElementById('emptyState');
@@ -115,11 +125,13 @@ async function loadAppointments() {
 
   try {
     const params = new URLSearchParams();
-    if (state.filter !== 'all') params.set('status', state.filter);
+    if (state.statusFilter !== 'all') params.set('status', state.statusFilter);
+    if (state.typeFilter !== 'all') params.set('form_type', state.typeFilter);
     if (state.search) params.set('q', state.search);
-    const data = await api(`/api/appointments?${params}`);
-    state.appointments = data.appointments;
+    const data = await api(`/api/forms?${params}`);
+    state.forms = data.forms;
     state.stats = data.stats;
+    state.byType = data.byType;
     renderStats();
     renderTable();
   } catch (e) {
@@ -131,37 +143,58 @@ async function loadAppointments() {
 
 function renderStats() {
   const items = [
-    { key: 'total', label: 'Toplam', color: 'bg-slate-100 text-slate-800' },
-    { key: 'new', label: 'Yeni', color: 'bg-amber-100 text-amber-800' },
-    { key: 'contacted', label: 'İletişim', color: 'bg-blue-100 text-blue-800' },
-    { key: 'scheduled', label: 'Planlandı', color: 'bg-indigo-100 text-indigo-800' },
-    { key: 'completed', label: 'Tamamlandı', color: 'bg-emerald-100 text-emerald-800' },
-    { key: 'cancelled', label: 'İptal', color: 'bg-red-100 text-red-800' },
+    { key: 'total', label: 'Toplam', color: 'text-slate-800' },
+    { key: 'new', label: 'Yeni', color: 'text-amber-700' },
+    { key: 'contacted', label: 'İletişim', color: 'text-blue-700' },
+    { key: 'scheduled', label: 'Planlandı', color: 'text-indigo-700' },
+    { key: 'completed', label: 'Tamamlandı', color: 'text-emerald-700' },
+    { key: 'cancelled', label: 'İptal', color: 'text-red-700' },
   ];
   document.getElementById('statsRow').innerHTML = items.map(it => `
     <div class="bg-white rounded-xl border p-4">
       <div class="text-xs uppercase tracking-wider text-slate-500">${it.label}</div>
-      <div class="text-2xl font-bold ${it.color.split(' ')[1]} mt-1">${state.stats[it.key] || 0}</div>
+      <div class="text-2xl font-bold ${it.color} mt-1">${state.stats[it.key] || 0}</div>
     </div>
   `).join('');
 
-  document.getElementById('filterTabs').innerHTML = [
-    { key: 'all', label: 'Tümü' },
+  // Form type tabs
+  const typeTabs = [
+    { key: 'all', label: 'Tüm Tipler', count: state.stats.total },
+    { key: 'appointment', label: TYPE_LABEL.appointment, count: state.byType.appointment || 0 },
+    { key: 'whatsapp', label: TYPE_LABEL.whatsapp, count: state.byType.whatsapp || 0 },
+    { key: 'contact', label: TYPE_LABEL.contact, count: state.byType.contact || 0 },
+  ];
+  document.getElementById('typeTabs').innerHTML = typeTabs.map(t => `
+    <button data-type="${t.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.typeFilter === t.key ? 'tab-active border-blue-700' : 'bg-white hover:bg-slate-50 border-slate-200'}">
+      ${t.label} <span class="opacity-60 ml-1">(${t.count})</span>
+    </button>
+  `).join('');
+
+  // Status tabs
+  const statusTabs = [
+    { key: 'all', label: 'Tüm Durumlar' },
     { key: 'new', label: STATUS_LABEL.new },
     { key: 'contacted', label: STATUS_LABEL.contacted },
     { key: 'scheduled', label: STATUS_LABEL.scheduled },
     { key: 'completed', label: STATUS_LABEL.completed },
     { key: 'cancelled', label: STATUS_LABEL.cancelled },
-  ].map(f => `
-    <button data-filter="${f.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.filter === f.key ? 'tab-active border-blue-700' : 'bg-white hover:bg-slate-50 border-slate-200'}">
+  ];
+  document.getElementById('statusTabs').innerHTML = statusTabs.map(f => `
+    <button data-status="${f.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.statusFilter === f.key ? 'tab-active border-blue-700' : 'bg-white hover:bg-slate-50 border-slate-200'}">
       ${f.label}
     </button>
   `).join('');
 
-  document.querySelectorAll('[data-filter]').forEach(btn => {
+  document.querySelectorAll('[data-type]').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.filter = btn.dataset.filter;
-      loadAppointments();
+      state.typeFilter = btn.dataset.type;
+      loadForms();
+    });
+  });
+  document.querySelectorAll('[data-status]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.statusFilter = btn.dataset.status;
+      loadForms();
     });
   });
 }
@@ -171,7 +204,7 @@ function renderTable() {
   const tableEl = document.getElementById('apptTable');
   const emptyEl = document.getElementById('emptyState');
 
-  if (state.appointments.length === 0) {
+  if (state.forms.length === 0) {
     tableEl.hidden = true;
     emptyEl.hidden = false;
     return;
@@ -180,33 +213,37 @@ function renderTable() {
   tableEl.hidden = false;
   emptyEl.hidden = true;
 
-  tbody.innerHTML = state.appointments.map(a => `
-    <tr class="hover:bg-slate-50 cursor-pointer" data-id="${a.id}">
-      <td class="p-3 text-xs text-slate-500">${formatDate(a.created_at)}</td>
-      <td class="p-3">
-        <div class="font-medium">${escapeHtml(a.first_name)} ${escapeHtml(a.last_name)}</div>
-        <div class="text-xs text-slate-500">${escapeHtml(a.nationality || '')}</div>
-      </td>
-      <td class="p-3 text-xs">
-        ${a.phone ? `<div>📞 ${escapeHtml(a.phone)}</div>` : ''}
-        ${a.email ? `<div class="text-slate-500">${escapeHtml(a.email)}</div>` : ''}
-      </td>
-      <td class="p-3 text-xs">${escapeHtml(a.subject || '-')}</td>
-      <td class="p-3 text-xs">
-        ${a.appointment_date ? `<div>${a.appointment_date}</div>` : ''}
-        ${a.appointment_time ? `<div class="text-slate-500">${escapeHtml(a.appointment_time)}</div>` : ''}
-      </td>
-      <td class="p-3 text-xs">${escapeHtml(a.representative || '-')}</td>
-      <td class="p-3">
-        <span class="px-2 py-1 text-xs font-medium rounded-full status-${a.status}">
-          ${STATUS_LABEL[a.status] || a.status}
-        </span>
-      </td>
-      <td class="p-3 text-right">
-        <button class="text-blue-600 hover:text-blue-700 text-sm">Detay →</button>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = state.forms.map(a => {
+    const typeIcon = TYPE_LABEL[a.form_type] || `📄 ${a.form_type}`;
+    const summary = a.subject || a.topic || a.message?.slice(0, 60) || a.description?.slice(0, 60) || '-';
+    const apptInfo = a.appointment_date
+      ? `<div>${a.appointment_date}${a.appointment_time ? ` ${escapeHtml(a.appointment_time)}` : ''}</div>`
+      : '<span class="text-slate-300">-</span>';
+    return `
+      <tr class="hover:bg-slate-50 cursor-pointer" data-id="${a.id}">
+        <td class="p-3 text-xs text-slate-500">${formatDate(a.created_at)}</td>
+        <td class="p-3 text-xs"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700">${typeIcon}</span></td>
+        <td class="p-3">
+          <div class="font-medium">${escapeHtml(a.first_name)} ${escapeHtml(a.last_name || '')}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(a.nationality || '')}</div>
+        </td>
+        <td class="p-3 text-xs">
+          ${a.phone ? `<div>📞 ${escapeHtml(a.phone)}</div>` : ''}
+          ${a.email ? `<div class="text-slate-500">${escapeHtml(a.email)}</div>` : ''}
+        </td>
+        <td class="p-3 text-xs">${escapeHtml(summary)}</td>
+        <td class="p-3 text-xs">${apptInfo}</td>
+        <td class="p-3">
+          <span class="px-2 py-1 text-xs font-medium rounded-full status-${a.status || 'new'}">
+            ${STATUS_LABEL[a.status] || a.status || '🆕 Yeni'}
+          </span>
+        </td>
+        <td class="p-3 text-right">
+          <button class="text-blue-600 hover:text-blue-700 text-sm">Detay →</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 
   tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', () => openDetail(tr.dataset.id));
@@ -214,35 +251,42 @@ function renderTable() {
 }
 
 // ─────────── Detail modal ───────────
+function field(label, value) {
+  if (!value) return '';
+  return `<div><b class="text-slate-600">${label}:</b> ${escapeHtml(String(value))}</div>`;
+}
+
 function openDetail(id) {
-  const a = state.appointments.find(x => x.id === id);
+  const a = state.forms.find(x => x.id === id);
   if (!a) return;
   state.editingId = id;
-  document.getElementById('modalTitle').textContent = `${a.first_name} ${a.last_name}`;
+  document.getElementById('modalTitle').textContent = `${TYPE_LABEL[a.form_type] || a.form_type} — ${a.first_name} ${a.last_name || ''}`;
+
+  const bigText = (label, val) => val
+    ? `<div><div class="text-sm font-medium text-slate-700 mb-1">${label}</div><div class="bg-slate-50 rounded-lg p-3 text-sm whitespace-pre-wrap">${escapeHtml(val)}</div></div>`
+    : '';
+
   document.getElementById('modalBody').innerHTML = `
-    <div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-      <div><b>📞 Telefon:</b> <a href="tel:${a.phone}" class="text-blue-600">${escapeHtml(a.phone || '-')}</a></div>
-      <div><b>✉️ Email:</b> <a href="mailto:${a.email}" class="text-blue-600">${escapeHtml(a.email || '-')}</a></div>
-      <div><b>🌍 Uyruk:</b> ${escapeHtml(a.nationality || '-')}</div>
-      <div><b>👫 Cinsiyet:</b> ${escapeHtml(a.gender || '-')}</div>
-      <div><b>🎂 Doğum:</b> ${a.birth_date || '-'}</div>
-      <div><b>📅 Randevu:</b> ${a.appointment_date || '-'} ${a.appointment_time || ''}</div>
-      <div><b>👤 Temsilci:</b> ${escapeHtml(a.representative || '-')}</div>
-      <div><b>🏠 Oturma:</b> ${escapeHtml(a.has_residency || '-')}</div>
-      ${a.residency_start_date ? `<div class="col-span-2 text-xs text-slate-500">Oturma: ${a.residency_start_date} → ${a.residency_end_date || '-'}</div>` : ''}
+    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+      ${a.phone ? `<div><b>📞 Telefon:</b> <a href="tel:${a.phone}" class="text-blue-600">${escapeHtml(a.phone)}</a></div>` : ''}
+      ${a.email ? `<div><b>✉️ Email:</b> <a href="mailto:${a.email}" class="text-blue-600">${escapeHtml(a.email)}</a></div>` : ''}
+      ${field('🌍 Uyruk', a.nationality)}
+      ${field('👫 Cinsiyet', a.gender)}
+      ${field('🎂 Doğum', a.birth_date)}
+      ${a.appointment_date ? `<div><b>📅 Randevu:</b> ${a.appointment_date} ${a.appointment_time || ''}</div>` : ''}
+      ${field('👤 Temsilci', a.representative)}
+      ${field('🏠 Oturma', a.has_residency)}
+      ${(a.residency_start_date || a.residency_end_date) ? `<div class="col-span-2 text-xs text-slate-500">Oturma: ${a.residency_start_date || '-'} → ${a.residency_end_date || '-'}</div>` : ''}
+      ${field('🌐 Konu (Topic)', a.topic)}
     </div>
-    <div>
-      <div class="text-sm font-medium text-slate-700 mb-1">📋 Konu</div>
-      <div class="bg-slate-50 rounded-lg p-3 text-sm">${escapeHtml(a.subject || '-')}</div>
-    </div>
-    <div>
-      <div class="text-sm font-medium text-slate-700 mb-1">📝 Açıklama</div>
-      <div class="bg-slate-50 rounded-lg p-3 text-sm whitespace-pre-wrap">${escapeHtml(a.description || '-')}</div>
-    </div>
+    ${bigText('📋 Konu', a.subject)}
+    ${bigText('💬 Mesaj', a.message)}
+    ${bigText('📝 Açıklama', a.description)}
+    ${bigText('❓ Soru', a.question)}
     <div>
       <label class="text-sm font-medium text-slate-700 block mb-1.5">Durum</label>
       <select id="modalStatus" class="w-full px-3 py-2 border rounded-lg text-sm">
-        ${STATUS_ORDER.map(s => `<option value="${s}" ${a.status === s ? 'selected' : ''}>${STATUS_LABEL[s]}</option>`).join('')}
+        ${STATUS_ORDER.map(s => `<option value="${s}" ${(a.status || 'new') === s ? 'selected' : ''}>${STATUS_LABEL[s]}</option>`).join('')}
       </select>
     </div>
     <div>
@@ -251,9 +295,10 @@ function openDetail(id) {
         class="w-full px-3 py-2 border rounded-lg text-sm">${escapeHtml(a.admin_notes || '')}</textarea>
     </div>
     <div class="text-xs text-slate-400 pt-2 border-t">
+      <div>Tip: <code>${a.form_type}</code> · Kaynak: <code>${a.source || 'web'}</code></div>
       <div>ID: <code>${a.id}</code></div>
-      <div>Oluşturuldu: ${formatDate(a.created_at)} ${a.ip_address ? `(${a.ip_address})` : ''}</div>
-      ${a.updated_at !== a.created_at ? `<div>Güncellendi: ${formatDate(a.updated_at)}</div>` : ''}
+      <div>Oluşturuldu: ${formatDate(a.created_at)} ${a.ip_address ? `· IP: ${a.ip_address}` : ''}</div>
+      ${a.updated_at && a.updated_at !== a.created_at ? `<div>Güncellendi: ${formatDate(a.updated_at)}</div>` : ''}
     </div>
   `;
   document.getElementById('detailModal').hidden = false;
@@ -269,13 +314,13 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   const status = document.getElementById('modalStatus').value;
   const admin_notes = document.getElementById('modalNotes').value;
   try {
-    await api(`/api/appointments/${state.editingId}`, {
+    await api(`/api/forms/${state.editingId}`, {
       method: 'PATCH',
       body: JSON.stringify({ status, admin_notes }),
     });
     closeModal();
     toast('Kaydedildi ✓');
-    loadAppointments();
+    loadForms();
   } catch (e) {
     toast('Hata: ' + e.message);
   }
@@ -283,12 +328,12 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 
 document.getElementById('deleteBtn').addEventListener('click', async () => {
   if (!state.editingId) return;
-  if (!confirm('Bu randevuyu silmek istediğinize emin misiniz?')) return;
+  if (!confirm('Bu kaydı silmek istediğinize emin misiniz?')) return;
   try {
-    await api(`/api/appointments/${state.editingId}`, { method: 'DELETE' });
+    await api(`/api/forms/${state.editingId}`, { method: 'DELETE' });
     closeModal();
     toast('Silindi');
-    loadAppointments();
+    loadForms();
   } catch (e) {
     toast('Hata: ' + e.message);
   }
@@ -300,11 +345,11 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     state.search = e.target.value.trim();
-    loadAppointments();
+    loadForms();
   }, 300);
 });
 
-document.getElementById('refreshBtn').addEventListener('click', loadAppointments);
+document.getElementById('refreshBtn').addEventListener('click', loadForms);
 
 // ─────────── Utils ───────────
 function formatDate(iso) {
@@ -314,7 +359,7 @@ function formatDate(iso) {
 }
 
 function escapeHtml(s) {
-  if (!s) return '';
+  if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
@@ -333,7 +378,7 @@ init();
 
 // Auto-refresh every 60s
 setInterval(() => {
-  if (state.token && !document.getElementById('detailModal').hidden === false) {
-    loadAppointments();
+  if (state.token && document.getElementById('detailModal').hidden) {
+    loadForms();
   }
 }, 60000);
