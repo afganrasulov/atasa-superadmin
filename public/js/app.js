@@ -31,8 +31,10 @@ let state = {
   forms: [],
   stats: {},
   byType: {},
+  byRep: {},
   statusFilter: 'all',
   typeFilter: 'all',
+  repFilter: 'all',
   search: '',
   editingId: null,
 };
@@ -127,11 +129,13 @@ async function loadForms() {
     const params = new URLSearchParams();
     if (state.statusFilter !== 'all') params.set('status', state.statusFilter);
     if (state.typeFilter !== 'all') params.set('form_type', state.typeFilter);
+    if (state.repFilter !== 'all') params.set('representative', state.repFilter);
     if (state.search) params.set('q', state.search);
     const data = await api(`/api/forms?${params}`);
     state.forms = data.forms;
     state.stats = data.stats;
     state.byType = data.byType;
+    state.byRep = data.byRep || { omer: 0, auto: 0 };
     renderStats();
     renderTable();
   } catch (e) {
@@ -185,6 +189,18 @@ function renderStats() {
     </button>
   `).join('');
 
+  // Representative tabs (Ömer'le özel görüşmek isteyenler vs)
+  const repTabs = [
+    { key: 'all', label: '👥 Tüm Temsilciler', count: state.stats.total },
+    { key: 'omer', label: '👤 Ömer Habib ile (özel)', count: state.byRep.omer || 0, highlight: true },
+    { key: 'auto', label: '⚙️ Otomatik atanan', count: state.byRep.auto || 0 },
+  ];
+  document.getElementById('repTabs').innerHTML = repTabs.map(t => `
+    <button data-rep="${t.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.repFilter === t.key ? 'tab-active border-blue-700' : t.highlight ? 'bg-amber-50 hover:bg-amber-100 border-amber-300' : 'bg-white hover:bg-slate-50 border-slate-200'}">
+      ${t.label} <span class="opacity-60 ml-1">(${t.count})</span>
+    </button>
+  `).join('');
+
   document.querySelectorAll('[data-type]').forEach(btn => {
     btn.addEventListener('click', () => {
       state.typeFilter = btn.dataset.type;
@@ -194,6 +210,12 @@ function renderStats() {
   document.querySelectorAll('[data-status]').forEach(btn => {
     btn.addEventListener('click', () => {
       state.statusFilter = btn.dataset.status;
+      loadForms();
+    });
+  });
+  document.querySelectorAll('[data-rep]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.repFilter = btn.dataset.rep;
       loadForms();
     });
   });
@@ -216,9 +238,11 @@ function renderTable() {
   tbody.innerHTML = state.forms.map(a => {
     const typeIcon = TYPE_LABEL[a.form_type] || `📄 ${a.form_type}`;
     const summary = a.subject || a.topic || a.message?.slice(0, 60) || a.description?.slice(0, 60) || '-';
+    const wantsOmer = a.representative && /ömer|omer|habib/i.test(a.representative);
+    const omerBadge = wantsOmer ? '<div class="mt-1 inline-block px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-semibold">👤 Ömer Habib</div>' : '';
     const apptInfo = a.appointment_date
-      ? `<div>${a.appointment_date}${a.appointment_time ? ` ${escapeHtml(a.appointment_time)}` : ''}</div>`
-      : '<span class="text-slate-300">-</span>';
+      ? `<div>${a.appointment_date}${a.appointment_time ? ` ${escapeHtml(a.appointment_time)}` : ''}</div>${omerBadge}`
+      : (omerBadge || '<span class="text-slate-300">-</span>');
     return `
       <tr class="hover:bg-slate-50 cursor-pointer" data-id="${a.id}">
         <td class="p-3 text-xs text-slate-500">${formatDate(a.created_at)}</td>

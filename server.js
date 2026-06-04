@@ -137,7 +137,7 @@ async function startListener() {
 
 // ---------------- Admin endpoints ----------------
 app.get('/api/forms', requireAuth, async (req, res) => {
-  const { status, form_type, q, limit = 100, offset = 0 } = req.query;
+  const { status, form_type, representative, q, limit = 100, offset = 0 } = req.query;
   const conditions = [];
   const params = [];
   if (status && status !== 'all') {
@@ -147,6 +147,11 @@ app.get('/api/forms', requireAuth, async (req, res) => {
   if (form_type && form_type !== 'all') {
     params.push(form_type);
     conditions.push(`form_type = $${params.length}`);
+  }
+  if (representative === 'omer') {
+    conditions.push(`(representative ILIKE '%ömer%' OR representative ILIKE '%omer%' OR representative ILIKE '%habib%')`);
+  } else if (representative === 'auto') {
+    conditions.push(`representative = 'Otomatik'`);
   }
   if (q) {
     params.push(`%${q}%`);
@@ -168,11 +173,18 @@ app.get('/api/forms', requireAuth, async (req, res) => {
     const { rows: typeCounts } = await pool.query(
       `SELECT form_type, COUNT(*)::int AS count FROM atasa_mobi.form_submissions GROUP BY form_type`,
     );
+    const { rows: repCounts } = await pool.query(
+      `SELECT
+        COUNT(*) FILTER (WHERE representative ILIKE '%ömer%' OR representative ILIKE '%omer%' OR representative ILIKE '%habib%')::int AS omer,
+        COUNT(*) FILTER (WHERE representative = 'Otomatik')::int AS auto
+       FROM atasa_mobi.form_submissions`,
+    );
     const stats = { new: 0, contacted: 0, scheduled: 0, completed: 0, cancelled: 0, no_show: 0, spam: 0, total: 0 };
     statusCounts.forEach(c => { stats[c.status] = c.count; stats.total += c.count; });
     const byType = { appointment: 0, contact: 0, whatsapp: 0, other: 0 };
     typeCounts.forEach(c => { byType[c.form_type] = c.count; });
-    res.json({ forms: rows, stats, byType });
+    const byRep = { omer: repCounts[0]?.omer || 0, auto: repCounts[0]?.auto || 0 };
+    res.json({ forms: rows, stats, byType, byRep });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
