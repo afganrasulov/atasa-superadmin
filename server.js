@@ -145,8 +145,12 @@ async function startListener() {
 // ---------------- Admin endpoints ----------------
 app.get('/api/forms', requireAuth, async (req, res) => {
   const { status, form_type, representative, q, limit = 100, offset = 0 } = req.query;
+  // Proje her zaman filtrelenir (default 'atasa' = atasa.tr/atasa.mobi; 'atasakurumsal' = kurumsal).
+  const project = req.query.project === 'atasakurumsal' ? 'atasakurumsal' : 'atasa';
   const conditions = [];
   const params = [];
+  params.push(project);
+  conditions.push(`project = $${params.length}`);
   if (status && status !== 'all') {
     params.push(status);
     conditions.push(`status = $${params.length}`);
@@ -164,7 +168,7 @@ app.get('/api/forms', requireAuth, async (req, res) => {
     params.push(`%${q}%`);
     conditions.push(`(first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR email ILIKE $${params.length} OR phone ILIKE $${params.length} OR message ILIKE $${params.length} OR description ILIKE $${params.length})`);
   }
-  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
   params.push(parseInt(limit, 10));
   params.push(parseInt(offset, 10));
   try {
@@ -174,17 +178,21 @@ app.get('/api/forms', requireAuth, async (req, res) => {
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
+    // İstatistikler de seçili projeye göre.
     const { rows: statusCounts } = await pool.query(
-      `SELECT status, COUNT(*)::int AS count FROM atasa_mobi.form_submissions GROUP BY status`,
+      `SELECT status, COUNT(*)::int AS count FROM atasa_mobi.form_submissions WHERE project=$1 GROUP BY status`,
+      [project],
     );
     const { rows: typeCounts } = await pool.query(
-      `SELECT form_type, COUNT(*)::int AS count FROM atasa_mobi.form_submissions GROUP BY form_type`,
+      `SELECT form_type, COUNT(*)::int AS count FROM atasa_mobi.form_submissions WHERE project=$1 GROUP BY form_type`,
+      [project],
     );
     const { rows: repCounts } = await pool.query(
       `SELECT
         COUNT(*) FILTER (WHERE representative ILIKE '%ömer%' OR representative ILIKE '%omer%' OR representative ILIKE '%habib%')::int AS omer,
         COUNT(*) FILTER (WHERE representative = 'Otomatik')::int AS auto
-       FROM atasa_mobi.form_submissions`,
+       FROM atasa_mobi.form_submissions WHERE project=$1`,
+      [project],
     );
     const stats = { new: 0, contacted: 0, scheduled: 0, completed: 0, cancelled: 0, no_show: 0, spam: 0, total: 0 };
     statusCounts.forEach(c => { stats[c.status] = c.count; stats.total += c.count; });

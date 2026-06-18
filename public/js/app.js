@@ -25,6 +25,11 @@ const TYPE_LABEL = {
   other: '📄 Diğer',
 };
 
+const PROJECTS = [
+  { key: 'atasa', label: '🌐 Atasa.tr' },
+  { key: 'atasakurumsal', label: '🏢 Atasa Kurumsal' },
+];
+
 let state = {
   user: null,
   token: null,
@@ -32,6 +37,7 @@ let state = {
   stats: {},
   byType: {},
   byRep: {},
+  projectFilter: 'atasa',
   statusFilter: 'all',
   typeFilter: 'all',
   repFilter: 'all',
@@ -127,6 +133,7 @@ async function loadForms() {
 
   try {
     const params = new URLSearchParams();
+    params.set('project', state.projectFilter);
     if (state.statusFilter !== 'all') params.set('status', state.statusFilter);
     if (state.typeFilter !== 'all') params.set('form_type', state.typeFilter);
     if (state.repFilter !== 'all') params.set('representative', state.repFilter);
@@ -146,6 +153,27 @@ async function loadForms() {
 }
 
 function renderStats() {
+  // Proje sekmeleri (üstte, belirgin)
+  document.getElementById('projectTabs').innerHTML = PROJECTS.map(p => `
+    <button data-project="${p.key}" class="px-4 py-2 text-sm font-semibold rounded-lg border ${state.projectFilter === p.key ? 'tab-active border-blue-700' : 'bg-white hover:bg-slate-50 border-slate-200'}">
+      ${p.label}
+    </button>
+  `).join('');
+  document.querySelectorAll('[data-project]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.projectFilter === btn.dataset.project) return;
+      state.projectFilter = btn.dataset.project;
+      // Proje değişince diğer filtreleri sıfırla (temsilci filtresi atasa'ya özel)
+      state.statusFilter = 'all';
+      state.typeFilter = 'all';
+      state.repFilter = 'all';
+      state.search = '';
+      const searchEl = document.getElementById('searchInput');
+      if (searchEl) searchEl.value = '';
+      loadForms();
+    });
+  });
+
   const items = [
     { key: 'total', label: 'Toplam', color: 'text-slate-800' },
     { key: 'new', label: 'Yeni', color: 'text-amber-700' },
@@ -189,12 +217,12 @@ function renderStats() {
     </button>
   `).join('');
 
-  // Representative tabs (Ömer'le özel görüşmek isteyenler vs)
-  const repTabs = [
+  // Representative tabs (Ömer'le özel görüşmek isteyenler vs) — sadece atasa projesinde
+  const repTabs = state.projectFilter === 'atasa' ? [
     { key: 'all', label: '👥 Tüm Temsilciler', count: state.stats.total },
     { key: 'omer', label: '👤 Ömer Habib ile (özel)', count: state.byRep.omer || 0, highlight: true },
     { key: 'auto', label: '⚙️ Otomatik atanan', count: state.byRep.auto || 0 },
-  ];
+  ] : [];
   document.getElementById('repTabs').innerHTML = repTabs.map(t => `
     <button data-rep="${t.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.repFilter === t.key ? 'tab-active border-blue-700' : t.highlight ? 'bg-amber-50 hover:bg-amber-100 border-amber-300' : 'bg-white hover:bg-slate-50 border-slate-200'}">
       ${t.label} <span class="opacity-60 ml-1">(${t.count})</span>
