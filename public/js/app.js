@@ -30,6 +30,15 @@ const PROJECTS = [
   { key: 'atasakurumsal', label: '🏢 Atasa Kurumsal' },
 ];
 
+const DEPARTMENTS = [
+  { key: 'all', label: 'Tümü' },
+  { key: 'calisma', label: '💼 Çalışma İzni' },
+  { key: 'ikamet', label: '🏠 İkamet İzni' },
+  { key: 'vatandaslik', label: '🛂 Vatandaşlık' },
+  { key: 'ogrenci', label: '🎓 Öğrenci' },
+  { key: 'diger', label: '📋 Diğer' },
+];
+
 let state = {
   user: null,
   token: null,
@@ -37,7 +46,9 @@ let state = {
   stats: {},
   byType: {},
   byRep: {},
+  byDept: {},
   projectFilter: 'atasa',
+  departmentFilter: 'all',
   statusFilter: 'all',
   typeFilter: 'all',
   repFilter: 'all',
@@ -134,6 +145,7 @@ async function loadForms() {
   try {
     const params = new URLSearchParams();
     params.set('project', state.projectFilter);
+    if (state.departmentFilter !== 'all') params.set('department', state.departmentFilter);
     if (state.statusFilter !== 'all') params.set('status', state.statusFilter);
     if (state.typeFilter !== 'all') params.set('form_type', state.typeFilter);
     if (state.repFilter !== 'all') params.set('representative', state.repFilter);
@@ -143,6 +155,7 @@ async function loadForms() {
     state.stats = data.stats;
     state.byType = data.byType;
     state.byRep = data.byRep || { omer: 0, auto: 0 };
+    state.byDept = data.byDept || {};
     renderStats();
     renderTable();
   } catch (e) {
@@ -164,12 +177,29 @@ function renderStats() {
       if (state.projectFilter === btn.dataset.project) return;
       state.projectFilter = btn.dataset.project;
       // Proje değişince diğer filtreleri sıfırla (temsilci filtresi atasa'ya özel)
+      state.departmentFilter = 'all';
       state.statusFilter = 'all';
       state.typeFilter = 'all';
       state.repFilter = 'all';
       state.search = '';
       const searchEl = document.getElementById('searchInput');
       if (searchEl) searchEl.value = '';
+      loadForms();
+    });
+  });
+
+  // Departman sekmeleri
+  document.getElementById('departmentTabs').innerHTML = DEPARTMENTS.map(d => {
+    const count = d.key === 'all' ? state.stats.total : (state.byDept[d.key] || 0);
+    return `
+      <button data-dept="${d.key}" class="px-3 py-1.5 text-sm rounded-lg border ${state.departmentFilter === d.key ? 'tab-active border-blue-700' : 'bg-white hover:bg-slate-50 border-slate-200'}">
+        ${d.label} <span class="opacity-60 ml-1">(${count || 0})</span>
+      </button>
+    `;
+  }).join('');
+  document.querySelectorAll('[data-dept]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.departmentFilter = btn.dataset.dept;
       loadForms();
     });
   });
@@ -266,6 +296,10 @@ function renderTable() {
   tbody.innerHTML = state.forms.map(a => {
     const typeIcon = TYPE_LABEL[a.form_type] || `📄 ${a.form_type}`;
     const summary = a.subject || a.topic || a.message?.slice(0, 60) || a.description?.slice(0, 60) || '-';
+    const actioned = a.status && a.status !== 'new';
+    const contactedCell = actioned
+      ? `<span class="text-emerald-600 text-lg" title="${STATUS_LABEL[a.status] || a.status}">✓</span>`
+      : `<button class="mark-contacted-btn px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 whitespace-nowrap" data-id="${a.id}">Görüşüldü</button>`;
     const wantsOmer = a.representative && /ömer|omer|habib/i.test(a.representative);
     const omerBadge = wantsOmer ? '<div class="mt-1 inline-block px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-semibold">👤 Ömer Habib</div>' : '';
     const apptInfo = a.appointment_date
@@ -290,6 +324,7 @@ function renderTable() {
             ${STATUS_LABEL[a.status] || a.status || '🆕 Yeni'}
           </span>
         </td>
+        <td class="p-3 text-center">${contactedCell}</td>
         <td class="p-3 text-right">
           <button class="text-blue-600 hover:text-blue-700 text-sm">Detay →</button>
         </td>
@@ -300,6 +335,26 @@ function renderTable() {
   tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', () => openDetail(tr.dataset.id));
   });
+  // "Görüşüldü" hızlı butonu — satır detayını açmadan status=contacted yapar
+  tbody.querySelectorAll('.mark-contacted-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      markContacted(btn.dataset.id);
+    });
+  });
+}
+
+async function markContacted(id) {
+  try {
+    await api(`/api/forms/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'contacted' }),
+    });
+    toast('Görüşüldü olarak işaretlendi ✓');
+    loadForms();
+  } catch (e) {
+    toast('Hata: ' + e.message);
+  }
 }
 
 // ─────────── Detail modal ───────────

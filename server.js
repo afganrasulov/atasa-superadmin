@@ -143,14 +143,29 @@ async function startListener() {
 }
 
 // ---------------- Admin endpoints ----------------
+// Departman sınıflandırması — kanonik departmanlar subject+topic+message metninde
+// kapsayıcı keyword eşlemesiyle bulunur (veri dağınık olduğu için kayıp olmasın).
+// Sabit string'ler (kullanıcı girdisi değil) → SQL'e doğrudan gömmek güvenli.
+const DEPT_TEXT = `(coalesce(subject,'') || ' ' || coalesce(topic,'') || ' ' || coalesce(message,''))`;
+const DEPT_CLAUSES = {
+  calisma: `${DEPT_TEXT} ILIKE '%çalışma%'`,
+  ikamet: `(${DEPT_TEXT} ILIKE '%ikamet%' OR ${DEPT_TEXT} ILIKE '%oturum%')`,
+  vatandaslik: `${DEPT_TEXT} ILIKE '%vatandaş%'`,
+  ogrenci: `(${DEPT_TEXT} ILIKE '%öğrenci%' OR ${DEPT_TEXT} ILIKE '%ogrenci%')`,
+};
+DEPT_CLAUSES.diger = `NOT (${DEPT_CLAUSES.calisma} OR ${DEPT_CLAUSES.ikamet} OR ${DEPT_CLAUSES.vatandaslik} OR ${DEPT_CLAUSES.ogrenci})`;
+
 app.get('/api/forms', requireAuth, async (req, res) => {
-  const { status, form_type, representative, q, limit = 100, offset = 0 } = req.query;
+  const { status, form_type, representative, department, q, limit = 100, offset = 0 } = req.query;
   // Proje her zaman filtrelenir (default 'atasa' = atasa.tr/atasa.mobi; 'atasakurumsal' = kurumsal).
   const project = req.query.project === 'atasakurumsal' ? 'atasakurumsal' : 'atasa';
   const conditions = [];
   const params = [];
   params.push(project);
   conditions.push(`project = $${params.length}`);
+  if (department && DEPT_CLAUSES[department]) {
+    conditions.push(DEPT_CLAUSES[department]);
+  }
   if (status && status !== 'all') {
     params.push(status);
     conditions.push(`status = $${params.length}`);
@@ -194,12 +209,24 @@ app.get('/api/forms', requireAuth, async (req, res) => {
        FROM atasa_mobi.form_submissions WHERE project=$1`,
       [project],
     );
+    // Departman sayımları (seçili projeye göre).
+    const { rows: deptCounts } = await pool.query(
+      `SELECT
+        COUNT(*) FILTER (WHERE ${DEPT_CLAUSES.calisma})::int AS calisma,
+        COUNT(*) FILTER (WHERE ${DEPT_CLAUSES.ikamet})::int AS ikamet,
+        COUNT(*) FILTER (WHERE ${DEPT_CLAUSES.vatandaslik})::int AS vatandaslik,
+        COUNT(*) FILTER (WHERE ${DEPT_CLAUSES.ogrenci})::int AS ogrenci,
+        COUNT(*) FILTER (WHERE ${DEPT_CLAUSES.diger})::int AS diger
+       FROM atasa_mobi.form_submissions WHERE project=$1`,
+      [project],
+    );
     const stats = { new: 0, contacted: 0, scheduled: 0, completed: 0, cancelled: 0, no_show: 0, spam: 0, total: 0 };
     statusCounts.forEach(c => { stats[c.status] = c.count; stats.total += c.count; });
     const byType = { appointment: 0, contact: 0, whatsapp: 0, other: 0 };
     typeCounts.forEach(c => { byType[c.form_type] = c.count; });
     const byRep = { omer: repCounts[0]?.omer || 0, auto: repCounts[0]?.auto || 0 };
-    res.json({ forms: rows, stats, byType, byRep });
+    const byDept = deptCounts[0] || { calisma: 0, ikamet: 0, vatandaslik: 0, ogrenci: 0, diger: 0 };
+    res.json({ forms: rows, stats, byType, byRep, byDept });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
